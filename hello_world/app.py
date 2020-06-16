@@ -1,42 +1,47 @@
 import json
+import boto3
+from flask_lambda import FlaskLambda
+from flask import request
 
-# import requests
+
+app = FlaskLambda(__name__)
+ddb = boto3.resource('dynamodb')
+table = ddb.Table('students')
 
 
-def lambda_handler(event, context):
-    """Sample pure Lambda function
+@app.route('/')
+def index():
+    return json_response({"message": "Hello, world!"})
 
-    Parameters
-    ----------
-    event: dict, required
-        API Gateway Lambda Proxy Input Format
 
-        Event doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-input-format
+@app.route('/students', methods=['GET', 'POST'])
+def put_list_students():
+    if request.method == 'GET':
+        students = table.scan()['Items']
+        return json_response(students)
+    else:
+        table.put_item(Item=request.form.to_dict())
+        return json_response({"message": "student entry created"})
 
-    context: object, required
-        Lambda Context runtime methods and attributes
 
-        Context doc: https://docs.aws.amazon.com/lambda/latest/dg/python-context-object.html
+@app.route('/students/<id>', methods=['GET', 'PATCH', 'DELETE'])
+def get_patch_delete_student(id):
+    key = {'id': id}
+    if request.method == 'GET':
+        student = table.get_item(Key=key).get('Item')
+        if student:
+            return json_response(student)
+        else:
+            return json_response({"message": "student not found"}, 404)
+    elif request.method == 'PATCH':
+        attribute_updates = {key: {'Value': value, 'Action': 'PUT'}
+                             for key, value in request.form.items()}
+        table.update_item(Key=key, AttributeUpdates=attribute_updates)
+        return json_response({"message": "student entry updated"})
+    else:
+        table.delete_item(Key=key)
+        return json_response({"message": "student entry deleted"})
 
-    Returns
-    ------
-    API Gateway Lambda Proxy Output Format: dict
 
-        Return doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html
-    """
-
-    # try:
-    #     ip = requests.get("http://checkip.amazonaws.com/")
-    # except requests.RequestException as e:
-    #     # Send some context about this error to Lambda Logs
-    #     print(e)
-
-    #     raise e
-
-    return {
-        "statusCode": 200,
-        "body": json.dumps({
-            "message": "hello world",
-            # "location": ip.text.replace("\n", "")
-        }),
-    }
+def json_response(data, response_code=200):
+    return json.dumps(data), response_code, {'Content-Type': 'application/json'}
